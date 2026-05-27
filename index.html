@@ -120,7 +120,6 @@
 
         createApp({
             setup() {
-                // 使用絕對相容的 Google 試算表匯出轉換格式（繞過 CORS 限制）
                 const sheetId = '18R24VlTKqvsVg5zs08tNWp4Z_wQefwiGWZpvjJyCqfA';
                 const mainSheetUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=0`;
                 const formResponseUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=2135634621`;
@@ -133,10 +132,9 @@
                 const categories = ref(['全部']);
                 const selectedItem = ref(null);
 
-                // 使用強化的 Fetch 撈取資料邏輯
                 const loadData = async () => {
                     try {
-                        // 1. 抓取主要輔具清單
+                        // 1. 讀取並轉換主要輔具清單
                         const mainRes = await fetch(mainSheetUrl);
                         const mainCsv = await mainRes.text();
                         
@@ -144,25 +142,24 @@
                             header: true,
                             skipEmptyLines: true,
                             complete: (results) => {
-                                // 清洗資料：去掉欄位名稱可能自帶的雙引號
-                                const cleanedData = results.data.map(row => {
-                                    const newRow = {};
-                                    for (let key in row) {
-                                        const cleanKey = key.replace(/^"|"$/g, '');
-                                        newRow[cleanKey] = row[key] ? row[key].replace(/^"|"$/g, '') : '';
-                                    }
-                                    return newRow;
-                                });
+                                // 將帶有引號的物件鍵值與欄位內容全部轉回乾淨文字
+                                equipments.value = results.data.map(row => {
+                                    const cleanRow = {};
+                                    Object.keys(row).forEach(key => {
+                                        const cleanKey = key.replace(/^["']|["']$/g, '').trim();
+                                        const cleanVal = row[key] ? row[key].replace(/^["']|["']$/g, '').trim() : '';
+                                        cleanRow[cleanKey] = cleanVal;
+                                    });
+                                    return cleanRow;
+                                }).filter(item => item.輔具編號);
 
-                                equipments.value = cleanedData.filter(item => item.輔具編號);
-                                
                                 const cats = new Set(['全部']);
                                 equipments.value.forEach(item => { if(item.分類) cats.add(item.分類); });
                                 categories.value = Array.from(cats);
                             }
                         });
 
-                        // 2. 抓取表單回覆紀錄
+                        // 2. 讀取並轉換表單回覆紀錄
                         const formRes = await fetch(formResponseUrl);
                         const formCsv = await formRes.text();
 
@@ -172,14 +169,14 @@
                             complete: (formResults) => {
                                 const counts = {};
                                 formResults.data.forEach(row => {
-                                    // 清洗欄位名稱與數值
-                                    const cleanedRow = {};
-                                    for (let key in row) {
-                                        const cleanKey = key.replace(/^"|"$/g, '');
-                                        cleanedRow[cleanKey] = row[key] ? row[key].replace(/^"|"$/g, '') : '';
-                                    }
+                                    const cleanRow = {};
+                                    Object.keys(row).forEach(key => {
+                                        const cleanKey = key.replace(/^["']|["']$/g, '').trim();
+                                        const cleanVal = row[key] ? row[key].replace(/^["']|["']$/g, '').trim() : '';
+                                        cleanRow[cleanKey] = cleanVal;
+                                    });
 
-                                    const rawValue = cleanedRow['請選擇欲借用的輔具名稱及編號'] || cleanedRow['輔具編號'] || '';
+                                    const rawValue = cleanRow['請選擇欲借用的輔具名稱及編號'] || cleanRow['輔具編號'] || '';
                                     if (rawValue) {
                                         const match = rawValue.match(/[【\[](.*?)[】\]]/);
                                         const finalNo = match ? match[1].trim() : rawValue.trim();
@@ -194,12 +191,7 @@
                         });
 
                     } catch (error) {
-                        console.error('資料讀取失敗，載入防錯本地數據:', error);
-                        // 異常防錯本地機制（絕不無限轉圈圈）
-                        equipments.value = [
-                            { 輔具編號: 'VT-001', 輔具名稱: '數位便攜擴視機', 分類: '視覺輔具', 保管位置: 'A櫃', 功能簡介: '請用無痕視窗開啟確認同步。', 適用對象: '低視能同學', 數量: '1' }
-                        ];
-                        categories.value = ['全部', '視覺輔具'];
+                        console.error('數據加載失敗:', error);
                         loading.value = false;
                     }
                 };
@@ -214,10 +206,14 @@
 
                 const filteredEquipments = computed(() => {
                     return equipments.value.filter(item => {
+                        const name = item.輔具名稱 || '';
+                        const id = item.輔具編號 || '';
+                        const category = item.分類 || '';
+                        
                         const matchesSearch = !searchQuery.value || 
-                            (item.輔具名稱?.toLowerCase().includes(searchQuery.value.toLowerCase())) ||
-                            (item.輔具編號?.toLowerCase().includes(searchQuery.value.toLowerCase()));
-                        const matchesCategory = currentCategory.value === '全部' || item.分類 === currentCategory.value;
+                            name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+                            id.toLowerCase().includes(searchQuery.value.toLowerCase());
+                        const matchesCategory = currentCategory.value === '全部' || category === currentCategory.value;
                         return matchesSearch && matchesCategory;
                     });
                 });
