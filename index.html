@@ -14,7 +14,7 @@
         <header class="bg-white border-b border-gray-200 sticky top-0 z-50">
             <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
                 <div class="text-center sm:text-left">
-                    <h1 class="text-xl font-bold tracking-widest text-[#2C4A3E]">Resource Classroom Learning Aid Resource Network</h1>
+                    <h1 class="text-xl font-bold tracking-widest text-[#2C4A3E] uppercase">Resource Classroom Learning Aid Resource Network</h1>
                     <p class="text-xs text-gray-400 tracking-wider mt-0.5">資源教室學習輔具資源網</p>
                 </div>
                 <div class="w-full sm:w-72">
@@ -44,8 +44,8 @@
                     <div class="relative aspect-[4/3] bg-gray-100 overflow-hidden">
                         <img :src="item.輔具照片 || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=500'" 
                              :alt="item.輔具名稱" class="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500">
-                        <span :class="getStatusClass(item.currently_status || item.目前狀態)" class="absolute top-3 right-3 text-[10px] px-2.5 py-1 rounded-full font-bold shadow-sm">
-                            {{ item.currently_status || item.目前狀態 }}
+                        <span :class="getStatusClass(getRemainingStock(item))" class="absolute top-3 right-3 text-[10px] px-2.5 py-1 rounded-full font-bold shadow-sm transition-colors">
+                            {{ getRemainingStock(item) > 0 ? (item.currently_status || item.currently_status === '可借用' || item.currently_status === '可借用' || item.目前狀態) : '已全數借出' }}
                         </span>
                     </div>
                     <div class="p-5 flex-1 flex flex-col justify-between">
@@ -88,12 +88,22 @@
                     <div class="bg-gray-50 p-4 rounded-xl text-xs text-gray-500 space-y-1.5 mb-6">
                         <div><strong>適用對象：</strong> {{ selectedItem.適用對象 }}</div>
                         <div><strong>存放位置：</strong> {{ selectedItem.保管位置 }}</div>
-                        <div><strong>目前狀態：</strong> <span :class="selectedItem.目前狀態 === '可借用' ? 'text-green-600 font-bold': 'text-amber-600 font-bold'">{{ selectedItem.目前狀態 }}</span></div>
-                        <div><strong>輔具數量：</strong> {{ selectedItem.數量 || '1' }}</div>
+                        <div>
+                            <strong>目前狀態：</strong> 
+                            <span :class="getRemainingStock(selectedItem) > 0 ? 'text-green-600 font-bold': 'text-rose-600 font-bold'">
+                                {{ getRemainingStock(selectedItem) > 0 ? (selectedItem.目前狀態 || '可借用') : '已全數借出' }}
+                            </span>
+                        </div>
+                        <div>
+                            <strong>剩餘數量：</strong> 
+                            <span :class="getRemainingStock(selectedItem) > 0 ? 'text-gray-700 font-bold' : 'text-rose-600 font-bold'">
+                                {{ getRemainingStock(selectedItem) }} 台 / (總量 {{ parseInt(selectedItem.數量) || 1 }} 台)
+                            </span>
+                        </div>
                     </div>
 
                     <a href="https://forms.google.com" target="_blank"
-                       class="block w-full text-center bg-[#2C4A3E] hover:bg-[#1E332B] text-white text-sm font-medium py-3 rounded-xl transition-all shadow-sm tracking-widest">
+                       class="block w-full text-center bg-[#2C4A3E] hover:bg-[#1E332B] text-white text-sm font-medium py-3 rounded-xl transition-all shadow-sm tracking-widest font-semibold">
                         線上申請預約借用
                     </a>
                 </div>
@@ -110,7 +120,7 @@
 
         createApp({
             setup() {
-                // 已自動為您更換為真實的 Google 試算表 CSV 網址
+                // Google 試算表 CSV 網址
                 const googleSheetCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStcS8WMjqJqGAhvOg0bPczxCgnGKpZWGU7r6t_XHrKFsxL6v_5gNUdvhf7ZhX4t13mOTrfVQ0Tx6JZ/pub?output=csv';
 
                 const equipments = ref([]);
@@ -139,10 +149,8 @@
                         header: true,
                         skipEmptyLines: true,
                         complete: (results) => {
-                            // 過濾掉沒有輔具編號的空白行
                             equipments.value = results.data.filter(item => item.輔具編號);
                             
-                            // 動態從試算表中抓取不重複的分類並更新分類選單
                             const cats = new Set(['全部']);
                             equipments.value.forEach(item => {
                                 if(item.分類) cats.add(item.分類);
@@ -156,6 +164,19 @@
                             loading.value = false;
                         }
                     });
+                };
+
+                // 計算動態庫存數量邏輯
+                const getRemainingStock = (item) => {
+                    if (!item) return 0;
+                    const total = parseInt(item.數量) || 1;
+                    const status = item.目前狀態 || item.currently_status;
+                    
+                    if (status === '已借出') {
+                        const remaining = total - 1;
+                        return remaining > 0 ? remaining : 0;
+                    }
+                    return total;
                 };
 
                 // 關鍵字與分類過濾邏輯
@@ -173,10 +194,12 @@
                 });
 
                 // 狀態標籤樣式設定
-                const getStatusClass = (status) => {
-                    if (status === '可借用') return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
-                    if (status === '已借出') return 'bg-amber-50 text-amber-700 border border-amber-200';
-                    return 'bg-gray-100 text-gray-600 border border-gray-200';
+                const getStatusClass = (remainingStock) => {
+                    if (remainingStock > 0) {
+                        return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+                    } else {
+                        return 'bg-rose-50 text-rose-700 border border-rose-200';
+                    }
                 };
 
                 const openModal = (item) => {
@@ -195,6 +218,7 @@
                     categories,
                     selectedItem,
                     filteredEquipments,
+                    getRemainingStock,
                     getStatusClass,
                     openModal
                 };
