@@ -39,7 +39,7 @@
 
             <div v-if="loading" class="text-center py-20">
                 <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-[#2C4A3E] mb-4"></div>
-                <p class="text-sm text-gray-500 tracking-widest">正在即時計算最新庫存中...</p>
+                <p class="text-sm text-gray-500 tracking-widest">正在即時加載輔具清單中...</p>
             </div>
 
             <div v-else-if="filteredEquipments.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -48,8 +48,8 @@
                     <div class="relative aspect-[4/3] bg-gray-100 overflow-hidden">
                         <img :src="item.輔具照片 || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=500'" 
                              :alt="item.輔具名稱" class="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500">
-                        <span :class="getStatusClass(getRemainingStock(item))" class="absolute top-3 right-3 text-[10px] px-2.5 py-1 rounded-full font-bold shadow-sm transition-colors">
-                            {{ getRemainingStock(item) > 0 ? '可借用' : '已全數借出' }}
+                        <span class="absolute top-3 right-3 text-[10px] px-2.5 py-1 rounded-full font-bold shadow-sm bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            可借用
                         </span>
                     </div>
                     <div class="p-5 flex-1 flex flex-col justify-between">
@@ -73,9 +73,9 @@
             </div>
         </main>
 
-        <div v-if="showModal && selectedItem" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" @click.self="closeModal">
+        <div v-if="selectedItem" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" @click.self="selectedItem = null">
             <div class="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl relative">
-                <button @click="closeModal" class="absolute top-4 right-4 bg-white/80 hover:bg-white text-gray-700 w-8 h-8 rounded-full flex items-center justify-center transition-all z-10">✕</button>
+                <button @click="selectedItem = null" class="absolute top-4 right-4 bg-white/80 hover:bg-white text-gray-700 w-8 h-8 rounded-full flex items-center justify-center transition-all z-10">✕</button>
 
                 <div class="relative aspect-video bg-gray-100">
                     <img :src="selectedItem.輔具照片 || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=500'" :alt="selectedItem.輔具名稱" class="w-full h-full object-cover">
@@ -92,18 +92,7 @@
                     <div class="bg-gray-50 p-4 rounded-xl text-xs text-gray-500 space-y-1.5 mb-6">
                         <div><strong>適用對象：</strong> {{ selectedItem.適用對象 }}</div>
                         <div><strong>存放位置：</strong> {{ selectedItem.保管位置 }}</div>
-                        <div>
-                            <strong>目前狀態：</strong> 
-                            <span :class="getRemainingStock(selectedItem) > 0 ? 'text-green-600 font-bold': 'text-rose-600 font-bold'">
-                                {{ getRemainingStock(selectedItem) > 0 ? '可借用' : '已全數借出' }}
-                            </span>
-                        </div>
-                        <div>
-                            <strong>剩餘數量：</strong> 
-                            <span :class="getRemainingStock(selectedItem) > 0 ? 'text-gray-700 font-bold' : 'text-rose-600 font-bold'">
-                                {{ getRemainingStock(selectedItem) }} 台 / (總量 {{ parseInt(selectedItem.數量) || 1 }} 台)
-                            </span>
-                        </div>
+                        <div><strong>總量數量：</strong> {{ selectedItem.數量 || '1' }} 台</div>
                     </div>
 
                     <a :href="selectedItem.預約表單 || selectedItem.google表單 || selectedItem.Google表單 || 'https://forms.google.com'" target="_blank"
@@ -124,21 +113,16 @@
 
         createApp({
             setup() {
+                // 連接你最新的試算表 ID
                 const sheetId = '1BXALU_DAFpErYY1FaEc9_at7DSOuS9HssbZ2B36LIig';
-                
                 const googleSheetCsvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/pub?gid=0&single=true&output=csv`;
-                const formResponsesCsvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/pub?gid=2135634621&single=true&output=csv`; 
 
                 const equipments = ref([]);
-                const loanCounts = ref({});
                 const loading = ref(true);
                 const searchQuery = ref('');
                 const currentCategory = ref('全部');
                 const categories = ref(['全部']);
-                
-                // 彈出視窗雙重狀態控制
                 const selectedItem = ref(null);
-                const showModal = ref(false);
 
                 const loadData = () => {
                     Papa.parse(googleSheetCsvUrl, {
@@ -146,46 +130,22 @@
                         header: true,
                         skipEmptyLines: true,
                         complete: (results) => {
-                            equipments.value = results.data.filter(item => item.輔具編號 && item.輔具編號.trim() !== '');
+                            // 只抓取有填寫輔具編號的乾淨資料
+                            equipments.value = results.data.filter(item => item.輔具編號 && item.輔微編號 !== '');
                             
+                            // 自動提取所有不重複的分類
                             const cats = new Set(['全部']);
                             equipments.value.forEach(item => {
                                 if(item.分類) cats.add(item.分類.trim());
                             });
                             categories.value = Array.from(cats);
-                            
-                            Papa.parse(formResponsesCsvUrl, {
-                                download: true,
-                                header: true,
-                                skipEmptyLines: true,
-                                complete: (formResults) => {
-                                    const counts = {};
-                                    formResults.data.forEach(row => {
-                                        const rawValue = row['請選擇欲借用的輔具名稱及編號'] || row['輔具編號'] || '';
-                                        if (rawValue) {
-                                            const match = rawValue.match(/[【\[](.*?)[】\]]/);
-                                            const finalNo = match ? match[1].trim() : rawValue.trim();
-                                            if (finalNo) {
-                                                counts[finalNo] = (counts[finalNo] || 0) + 1;
-                                            }
-                                        }
-                                    });
-                                    loanCounts.value = counts;
-                                    loading.value = false;
-                                },
-                                error: () => { loading.value = false; }
-                            });
+                            loading.value = false;
                         },
-                        error: () => { loading.value = false; }
+                        error: () => { 
+                            console.error('資料載入失敗');
+                            loading.value = false; 
+                        }
                     });
-                };
-
-                const getRemainingStock = (item) => {
-                    if (!item) return 0;
-                    const total = parseInt(item.數量) || 1;
-                    const borrowed = loanCounts.value[item.輔具編號] || 0;
-                    const remaining = total - borrowed;
-                    return remaining > 0 ? remaining : 0;
                 };
 
                 const filteredEquipments = computed(() => {
@@ -202,26 +162,12 @@
                     });
                 });
 
-                const getStatusClass = (remainingStock) => {
-                    return remainingStock > 0 
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                        : 'bg-rose-50 text-rose-700 border border-rose-200';
-                };
-
-                // 安全開啟與關閉視窗方法
-                const openModal = (item) => { 
-                    selectedItem.value = item; 
-                    showModal.value = true;
-                };
-                const closeModal = () => {
-                    showModal.value = false;
-                    selectedItem.value = null;
-                };
+                const openModal = (item) => { selectedItem.value = item; };
 
                 onMounted(() => { loadData(); });
 
                 return {
-                    equipments, loading, searchQuery, currentCategory, categories, selectedItem, showModal, filteredEquipments, getRemainingStock, getStatusClass, openModal, closeModal
+                    equipments, loading, searchQuery, currentCategory, categories, selectedItem, filteredEquipments, openModal
                 };
             }
         }).mount('#app');
